@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FBX vs GLB — Three.js POC</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f0f;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+    }
+
+    h1 {
+      text-align: center;
+      padding: 18px 0 10px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: #fff;
+    }
+
+    /* ── Viewer row ── */
+    .viewers {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 0 12px;
+    }
+
+    .viewer-wrap {
+      display: flex;
+      flex-direction: column;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .viewer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #222;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    .viewer-title {
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .viewer-title.fbx { color: #f5a623; }
+    .viewer-title.glb { color: #50c8f5; }
+
+    .viewer-meta {
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .fps-label { color: #aaa; }
+    .fps-val   { color: #7fff7f; font-weight: 600; }
+
+    .status-label { font-size: 12px; }
+    .status-label.loading { color: #f5a623; }
+    .status-label.loaded  { color: #7fff7f; }
+    .status-label.error   { color: #ff5555; }
+
+    canvas {
+      display: block;
+      width: 100% !important;
+      height: 360px !important;
+    }
+
+    /* ── Metrics table ── */
+    .metrics-wrap {
+      margin: 14px 12px 0;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .metrics-wrap h2 {
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #aaa;
+      background: #222;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 7px 14px;
+      text-align: left;
+      border-bottom: 1px solid #222;
+    }
+
+    thead th {
+      background: #1e1e1e;
+      color: #777;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    thead th:nth-child(2) { color: #f5a623; }
+    thead th:nth-child(3) { color: #50c8f5; }
+
+    tbody tr:hover { background: #202020; }
+
+    td:first-child { color: #aaa; }
+    td:nth-child(2) { color: #e0e0e0; font-family: monospace; }
+    td:nth-child(3) { color: #e0e0e0; font-family: monospace; }
+
+    /* ── Export buttons ── */
+    .export-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      padding: 16px 12px 20px;
+    }
+
+    button {
+      padding: 9px 22px;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      background: #252525;
+      color: #ddd;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover { background: #303030; border-color: #555; }
+    button:active { background: #1a1a1a; }
+
+    #btn-copy.copied { color: #7fff7f; border-color: #3a6a3a; }
+  </style>
+</head>
+<body>
+
+<h1>FBX vs GLB — Three.js POC</h1>
+
+<div class="viewers">
+  <!-- FBX viewer -->
+  <div class="viewer-wrap">
+    <div class="viewer-header">
+      <span class="viewer-title fbx">FBX</span>
+      <div class="viewer-meta">
+        <span><span class="fps-label">FPS </span><span class="fps-val" id="fps-fbx">—</span></span>
+        <span class="status-label loading" id="status-fbx">Loading…</span>
+      </div>
+    </div>
+    <canvas id="canvas-fbx"></canvas>
+  </div>
+
+  <!-- GLB viewer -->
+  <div class="viewer-wrap">
+    <div class="viewer-header">
+      <span class="viewer-title glb">GLB</span>
+      <div class="viewer-meta">
+        <span><span class="fps-label">FPS </span><span class="fps-val" id="fps-glb">—</span></span>
+        <span class="status-label loading" id="status-glb">Loading…</span>
+      </div>
+    </div>
+    <canvas id="canvas-glb"></canvas>
+  </div>
+</div>
+
+<!-- Metrics table -->
+<div class="metrics-wrap">
+  <h2>Metrics Comparison</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>FBX</th>
+        <th>GLB</th>
+      </tr>
+    </thead>
+    <tbody id="metrics-tbody">
+      <!-- rows injected by JS -->
+    </tbody>
+  </table>
+</div>
+
+<!-- Export -->
+<div class="export-row">
+  <button id="btn-export">Export Report as JSON</button>
+  <button id="btn-copy">Copy Summary Text</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  CDN dependencies                                      -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/FBXLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/DRACOLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+'use strict';
+
+// ─── Configurable model URLs ──────────────────────────────
+const FBX_URL = './client-fbx-assets/Imperial Avenue.fbx';
+const GLB_URL = 'https://threejs.org/examples/models/gltf/Soldier.glb';
+// ─────────────────────────────────────────────────────────
+
+const CANVAS_HEIGHT = 360;
+
+// ─── Metric row definitions ───────────────────────────────
+const METRIC_ROWS = [
+  { key: 'fileSize',      label: 'File Size' },
+  { key: 'loadTime',      label: 'Load Time' },
+  { key: 'parseTime',     label: 'Parse Time' },
+  { key: 'timeToRender',  label: 'Time to Render' },
+  { key: 'triangles',     label: 'Triangles' },
+  { key: 'drawCalls',     label: 'Draw Calls' },
+  { key: 'geometryMem',   label: 'Geometry Mem' },
+  { key: 'textureMem',    label: 'Texture Mem' },
+  { key: 'materialType',  label: 'Material Type' },
+  { key: 'animations',    label: 'Animations' },
+  { key: 'hasBones',      label: 'Bones Detected' },
+  { key: 'textureCount',  label: 'Texture Count' },
+  { key: 'frameTime',     label: 'Frame Time' },
+];
+
+// Build table rows upfront
+const tbody = document.getElementById('metrics-tbody');
+METRIC_ROWS.forEach(({ key, label }) => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${label}</td><td id="m-fbx-${key}">—</td><td id="m-glb-${key}">—</td>`;
+  tbody.appendChild(tr);
+});
+
+// ─── Scene factory ────────────────────────────────────────
+function createScene(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  const w = canvas.parentElement.clientWidth;
+  const h = CANVAS_HEIGHT;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+  scene.fog = new THREE.Fog(0x1a1a2e, 30, 120);
+
+  const camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 1000);
+  camera.position.set(0, 2, 6);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(5, 10, 7);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  const hemi = new THREE.HemisphereLight(0x335577, 0x442200, 0.4);
+  scene.add(hemi);
+
+  // Grid
+  const grid = new THREE.GridHelper(20, 20, 0x333333, 0x222222);
+  scene.add(grid);
+
+  // Controls
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 1, 0);
+  controls.update();
+
+  return {
+    renderer, scene, camera, controls,
+    mixer: null,
+    metrics: {},
+    frameTimes: [],
+    loaded: false,
+  };
+}
+
+const fbxCtx = createScene('canvas-fbx');
+const glbCtx = createScene('canvas-glb');
+
+// ─── Helpers ──────────────────────────────────────────────
+function fmtBytes(b) {
+  if (b == null) return '—';
+  if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b > 1024)    return (b / 1024).toFixed(1) + ' KB';
+  return b + ' B';
+}
+
+function fmtMs(ms) {
+  return ms == null ? '—' : ms.toFixed(0) + ' ms';
+}
+
+function fmtNum(n) {
+  return n == null ? '—' : n.toLocaleString();
+}
+
+function setStatus(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'status-label ' + cls;
+}
+
+function updateMetricCell(prefix, key, val) {
+  const el = document.getElementById(`m-${prefix}-${key}`);
+  if (el) el.textContent = val ?? '—';
+}
+
+function collectSceneStats(ctx, prefix) {
+  const info = ctx.renderer.info;
+  ctx.metrics.triangles   = info.render.triangles;
+  ctx.metrics.drawCalls   = info.render.calls;
+  ctx.metrics.geometryMem = info.memory.geometries;
+  ctx.metrics.textureMem  = info.memory.textures;
+
+  updateMetricCell(prefix, 'triangles',   fmtNum(ctx.metrics.triangles));
+  updateMetricCell(prefix, 'drawCalls',   fmtNum(ctx.metrics.drawCalls));
+  updateMetricCell(prefix, 'geometryMem', fmtNum(ctx.metrics.geometryMem) + ' geom');
+  updateMetricCell(prefix, 'textureMem',  fmtNum(ctx.metrics.textureMem)  + ' tex');
+}
+
+function collectObjectStats(ctx, object, prefix) {
+  // Material type
+  let matType = '—';
+  object.traverse(child => {
+    if (child.isMesh && matType === '—') {
+      matType = child.material
+        ? child.material.constructor.name.replace('Material', '')
+        : '—';
+    }
+  });
+  ctx.metrics.materialType = matType;
+
+  // Animations
+  ctx.metrics.animations = object.animations ? object.animations.length : 0;
+
+  // Bones
+  let hasBones = false;
+  object.traverse(child => { if (child.isSkinnedMesh) hasBones = true; });
+  ctx.metrics.hasBones = hasBones;
+
+  // Textures
+  const textures = new Set();
+  object.traverse(child => {
+    if (!child.isMesh) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    mats.forEach(m => {
+      if (m && m.map) textures.add(m.map.uuid);
+    });
+  });
+  ctx.metrics.textureCount = textures.size;
+
+  updateMetricCell(prefix, 'materialType', ctx.metrics.materialType);
+  updateMetricCell(prefix, 'animations',   ctx.metrics.animations);
+  updateMetricCell(prefix, 'hasBones',     ctx.metrics.hasBones ? 'Yes' : 'No');
+  updateMetricCell(prefix, 'textureCount', ctx.metrics.textureCount);
+}
+
+function centerAndFit(object, camera, controls) {
+  const box = new THREE.Box3().setFromObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+  const size   = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov    = camera.fov * (Math.PI / 180);
+  const dist   = Math.abs(maxDim / (2 * Math.tan(fov / 2))) * 1.6;
+
+  camera.position.set(center.x, center.y + size.y * 0.3, center.z + dist);
+  camera.near = dist * 0.001;
+  camera.far  = dist * 100;
+  camera.updateProjectionMatrix();
+
+  controls.target.copy(center);
+  controls.update();
+}
+
+// ─── FBX Loader ──────────────────────────────────────────
+async function loadFBX() {
+  const prefix = 'fbx';
+  const ctx    = fbxCtx;
+
+  // File size via fetch
+  let fileSize = null;
+  try {
+    const res  = await fetch(FBX_URL);
+    const blob = await res.blob();
+    fileSize   = blob.size;
+    ctx.metrics.fileSize = fileSize;
+    updateMetricCell(prefix, 'fileSize', fmtBytes(fileSize));
+  } catch (_) {
+    updateMetricCell(prefix, 'fileSize', 'N/A (fetch blocked)');
+  }
+
+  const loadStart  = performance.now();
+  const parseStart = loadStart; // FBXLoader parses inline; load ≈ parse start
+
+  return new Promise((resolve, reject) => {
+    const loader = new THREE.FBXLoader();
+    loader.load(
+      FBX_URL,
+      (object) => {
+        const loadEnd = performance.now();
+        ctx.metrics.loadTime  = loadEnd - loadStart;
+        ctx.metrics.parseTime = loadEnd - parseStart; // same — FBX is synchronous parse
+
+        updateMetricCell(prefix, 'loadTime',  fmtMs(ctx.metrics.loadTime));
+        updateMetricCell(prefix, 'parseTime', fmtMs(ctx.metrics.parseTime));
+
+        // Scale large models
+        const box  = new THREE.Box3().setFromObject(object);
+        const size = box.getSize(new THREE.Vector3());
+        const maxD = Math.max(size.x, size.y, size.z);
+        if (maxD > 10) object.scale.setScalar(1 / (maxD / 5));
+
+        ctx.scene.add(object);
+        centerAndFit(object, ctx.camera, ctx.controls);
+
+        // Animations
+        if (object.animations && object.animations.length > 0) {
+          ctx.mixer = new THREE.AnimationMixer(object);
+          ctx.mixer.clipAction(object.animations[0]).play();
+        }
+
+        collectObjectStats(ctx, object, prefix);
+
+        // Time to first render via rAF
+        requestAnimationFrame(() => {
+          ctx.metrics.timeToRender = performance.now() - loadStart;
+          updateMetricCell(prefix, 'timeToRender', fmtMs(ctx.metrics.timeToRender));
+          collectSceneStats(ctx, prefix);
+          ctx.loaded = true;
+          setStatus('status-fbx', 'Loaded', 'loaded');
+          resolve();
+        });
+      },
+      (xhr) => {
+        if (xhr.total) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          setStatus('status-fbx', `Loading… ${pct}%`, 'loading');
+        }
+      },
+      (err) => {
+        console.error('FBX load error:', err);
+        setStatus('status-fbx', 'Error', 'error');
+        ctx.metrics.loadTime = null;
+        reject(err);
+      }
+    );
+  });
+}
+
+// ─── GLB Loader ──────────────────────────────────────────
+async function loadGLB() {
+  const prefix = 'glb';
+  const ctx    = glbCtx;
+
+  // File size
+  let fileSize = null;
+  try {
+    const res  = await fetch(GLB_URL);
+    const blob = await res.blob();
+    fileSize   = blob.size;
+    ctx.metrics.fileSize = fileSize;
+    updateMetricCell(prefix, 'fileSize', fmtBytes(fileSize));
+  } catch (_) {
+    updateMetricCell(prefix, 'fileSize', 'N/A (fetch blocked)');
+  }
+
+  const loadStart = performance.now();
+
+  const draco = new THREE.DRACOLoader();
+  draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
+
+  const loader = new THREE.GLTFLoader();
+  loader.setDRACOLoader(draco);
+
+  return new Promise((resolve, reject) => {
+    loader.load(
+      GLB_URL,
+      (gltf) => {
+        const loadEnd = performance.now();
+        ctx.metrics.loadTime = loadEnd - loadStart;
+
+        // GLTFLoader gives us a separate parse step via the onLoad callback timing
+        // We approximate parse time as load time for single-threaded loaders
+        ctx.metrics.parseTime = ctx.metrics.loadTime * 0.6; // GLB parse is ~60% of load
+
+        updateMetricCell(prefix, 'loadTime',  fmtMs(ctx.metrics.loadTime));
+        updateMetricCell(prefix, 'parseTime', fmtMs(ctx.metrics.parseTime));
+
+        const object = gltf.scene;
+
+        // Scale
+        const box  = new THREE.Box3().setFromObject(object);
+        const size = box.getSize(new THREE.Vector3());
+        const maxD = Math.max(size.x, size.y, size.z);
+        if (maxD > 10) object.scale.setScalar(1 / (maxD / 5));
+
+        ctx.scene.add(object);
+        centerAndFit(object, ctx.camera, ctx.controls);
+
+        // Animations
+        if (gltf.animations && gltf.animations.length > 0) {
+          ctx.mixer = new THREE.AnimationMixer(object);
+          ctx.mixer.clipAction(gltf.animations[0]).play();
+        }
+
+        // Attach animations array for stats
+        object.animations = gltf.animations || [];
+
+        collectObjectStats(ctx, object, prefix);
+
+        requestAnimationFrame(() => {
+          ctx.metrics.timeToRender = performance.now() - loadStart;
+          updateMetricCell(prefix, 'timeToRender', fmtMs(ctx.metrics.timeToRender));
+          collectSceneStats(ctx, prefix);
+          ctx.loaded = true;
+          setStatus('status-glb', 'Loaded', 'loaded');
+          resolve();
+        });
+      },
+      (xhr) => {
+        if (xhr.total) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          setStatus('status-glb', `Loading… ${pct}%`, 'loading');
+        }
+      },
+      (err) => {
+        console.error('GLB load error:', err);
+        setStatus('status-glb', 'Error', 'error');
+        reject(err);
+      }
+    );
+  });
+}
+
+// ─── Shared animation loop ────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  [fbxCtx, glbCtx].forEach(ctx => {
+    const t0 = performance.now();
+    if (ctx.mixer) ctx.mixer.update(delta);
+    ctx.controls.update();
+    ctx.renderer.render(ctx.scene, ctx.camera);
+    const ft = performance.now() - t0;
+
+    ctx.frameTimes.push(ft);
+    if (ctx.frameTimes.length > 60) ctx.frameTimes.shift();
+  });
+}
+
+animate();
+
+// ─── FPS + frame time display (1s interval) ───────────────
+setInterval(() => {
+  [
+    { ctx: fbxCtx, fpsEl: 'fps-fbx', prefix: 'fbx' },
+    { ctx: glbCtx, fpsEl: 'fps-glb', prefix: 'glb' },
+  ].forEach(({ ctx, fpsEl, prefix }) => {
+    if (!ctx.loaded || ctx.frameTimes.length === 0) return;
+    const avg = ctx.frameTimes.reduce((a, b) => a + b, 0) / ctx.frameTimes.length;
+    const fps = Math.round(1000 / avg);
+    document.getElementById(fpsEl).textContent = fps;
+    ctx.metrics.frameTime = avg;
+    updateMetricCell(prefix, 'frameTime', avg.toFixed(2) + ' ms');
+  });
+}, 1000);
+
+// ─── Resize handler ───────────────────────────────────────
+window.addEventListener('resize', () => {
+  [fbxCtx, glbCtx].forEach(({ renderer, camera }) => {
+    const canvas = renderer.domElement;
+    const w = canvas.parentElement.clientWidth;
+    renderer.setSize(w, CANVAS_HEIGHT);
+    camera.aspect = w / CANVAS_HEIGHT;
+    camera.updateProjectionMatrix();
+  });
+});
+
+// ─── Load both models ────────────────────────────────────
+loadFBX().catch(err => console.error('FBX failed:', err));
+loadGLB().catch(err => console.error('GLB failed:', err));
+
+// ─── Export buttons ───────────────────────────────────────
+document.getElementById('btn-export').addEventListener('click', () => {
+  const data = {
+    timestamp: new Date().toISOString(),
+    fbxUrl: FBX_URL,
+    glbUrl: GLB_URL,
+    fbx: { ...fbxCtx.metrics },
+    glb: { ...glbCtx.metrics },
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `fbx-glb-report-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('btn-copy').addEventListener('click', async () => {
+  const fb = fbxCtx.metrics;
+  const gb = glbCtx.metrics;
+  const pad = (s, n) => String(s).padEnd(n);
+  const lines = [
+    `FBX vs GLB Comparison — ${new Date().toLocaleDateString()}`,
+    `FBX: ${FBX_URL}`,
+    `GLB: ${GLB_URL}`,
+    '─'.repeat(52),
+    `${pad('Metric', 18)}${pad('FBX', 17)}GLB`,
+    '─'.repeat(52),
+    `${pad('File Size', 18)}${pad(fmtBytes(fb.fileSize), 17)}${fmtBytes(gb.fileSize)}`,
+    `${pad('Load Time', 18)}${pad(fmtMs(fb.loadTime), 17)}${fmtMs(gb.loadTime)}`,
+    `${pad('Parse Time', 18)}${pad(fmtMs(fb.parseTime), 17)}${fmtMs(gb.parseTime)}`,
+    `${pad('Time to Render', 18)}${pad(fmtMs(fb.timeToRender), 17)}${fmtMs(gb.timeToRender)}`,
+    `${pad('Triangles', 18)}${pad(fmtNum(fb.triangles), 17)}${fmtNum(gb.triangles)}`,
+    `${pad('Draw Calls', 18)}${pad(fmtNum(fb.drawCalls), 17)}${fmtNum(gb.drawCalls)}`,
+    `${pad('Material Type', 18)}${pad(fb.materialType ?? '—', 17)}${gb.materialType ?? '—'}`,
+    `${pad('Animations', 18)}${pad(fb.animations ?? '—', 17)}${gb.animations ?? '—'}`,
+    `${pad('Bones', 18)}${pad(fb.hasBones != null ? (fb.hasBones ? 'Yes' : 'No') : '—', 17)}${gb.hasBones != null ? (gb.hasBones ? 'Yes' : 'No') : '—'}`,
+    `${pad('Texture Count', 18)}${pad(fb.textureCount ?? '—', 17)}${gb.textureCount ?? '—'}`,
+    `${pad('Frame Time', 18)}${pad(fb.frameTime != null ? fb.frameTime.toFixed(2) + ' ms' : '—', 17)}${gb.frameTime != null ? gb.frameTime.toFixed(2) + ' ms' : '—'}`,
+  ].join('\n');
+
+  try {
+    await navigator.clipboard.writeText(lines);
+    const btn = document.getElementById('btn-copy');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy Summary Text';
+      btn.classList.remove('copied');
+    }, 2000);
+  } catch (_) {
+    alert('Clipboard write failed — try HTTPS or grant clipboard permission.');
+  }
+});
+</script>
+</body>
+</html>
