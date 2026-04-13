@@ -208,20 +208,26 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════ -->
-<!--  CDN dependencies                                      -->
+<!--  Import map — all deps served locally                  -->
 <!-- ═══════════════════════════════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/FBXLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/DRACOLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./libs/three.module.min.js",
+    "three/addons/": "./libs/"
+  }
+}
+</script>
 
-<script>
-'use strict';
+<script type="module">
+import * as THREE from 'three';
+import { FBXLoader }     from './libs/loaders/FBXLoader.js';
+import { GLTFLoader }    from './libs/loaders/GLTFLoader.js';
+import { DRACOLoader }   from './libs/loaders/DRACOLoader.js';
+import { OrbitControls } from './libs/controls/OrbitControls.js';
 
 // ─── Configurable model URLs ──────────────────────────────
-const FBX_URL = './client-fbx-assets/Imperial Avenue.fbx';
+const FBX_URL = 'https://github.com/aman-technyx/threejs-fbx-glb-poc/releases/download/v1.0/Imperial-Avenue.fbx';
 const GLB_URL = 'https://threejs.org/examples/models/gltf/Soldier.glb';
 // ─────────────────────────────────────────────────────────
 
@@ -262,7 +268,7 @@ function createScene(canvasId) {
   renderer.setSize(w, h);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
-  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1a1a2e);
@@ -286,7 +292,7 @@ function createScene(canvasId) {
   scene.add(grid);
 
   // Controls
-  const controls = new THREE.OrbitControls(camera, canvas);
+  const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.target.set(0, 1, 0);
@@ -345,13 +351,17 @@ function collectSceneStats(ctx, prefix) {
 }
 
 function collectObjectStats(ctx, object, prefix) {
-  // Material type
+  // Material type — use isMesh* flags (works with minified builds)
   let matType = '—';
   object.traverse(child => {
-    if (child.isMesh && matType === '—') {
-      matType = child.material
-        ? child.material.constructor.name.replace('Material', '')
-        : '—';
+    if (child.isMesh && matType === '—' && child.material) {
+      const m = child.material;
+      if (m.isMeshStandardMaterial)    matType = 'MeshStandard';
+      else if (m.isMeshPhongMaterial)  matType = 'MeshPhong';
+      else if (m.isMeshLambertMaterial)matType = 'MeshLambert';
+      else if (m.isMeshBasicMaterial)  matType = 'MeshBasic';
+      else if (m.isMeshPhysicalMaterial)matType = 'MeshPhysical';
+      else matType = 'Unknown';
     }
   });
   ctx.metrics.materialType = matType;
@@ -382,14 +392,30 @@ function collectObjectStats(ctx, object, prefix) {
 }
 
 function centerAndFit(object, camera, controls) {
-  const box = new THREE.Box3().setFromObject(object);
+  // For SkinnedMesh, Box3.setFromObject uses bind-pose geometry and gives wrong results.
+  // Use bone world positions instead when bones are present.
+  let box = new THREE.Box3();
+  let hasSkinned = false;
+  object.traverse(c => { if (c.isSkinnedMesh) hasSkinned = true; });
+
+  if (hasSkinned) {
+    const bonePos = new THREE.Vector3();
+    object.traverse(c => {
+      if (c.isBone) { c.getWorldPosition(bonePos); box.expandByPoint(bonePos); }
+    });
+    // Fallback to geometry if no bones found
+    if (box.isEmpty()) box.setFromObject(object);
+  } else {
+    box.setFromObject(object);
+  }
+
   const center = box.getCenter(new THREE.Vector3());
   const size   = box.getSize(new THREE.Vector3());
-  const maxDim = Math.max(size.x, size.y, size.z);
+  const diag   = Math.sqrt(size.x * size.x + size.y * size.y + size.z * size.z);
   const fov    = camera.fov * (Math.PI / 180);
-  const dist   = Math.abs(maxDim / (2 * Math.tan(fov / 2))) * 1.6;
+  const dist   = Math.abs(diag / (2 * Math.tan(fov / 2))) * 2.2;
 
-  camera.position.set(center.x, center.y + size.y * 0.3, center.z + dist);
+  camera.position.set(center.x + dist * 0.15, center.y, center.z + dist);
   camera.near = dist * 0.001;
   camera.far  = dist * 100;
   camera.updateProjectionMatrix();
@@ -419,7 +445,7 @@ async function loadFBX() {
   const parseStart = loadStart; // FBXLoader parses inline; load ≈ parse start
 
   return new Promise((resolve, reject) => {
-    const loader = new THREE.FBXLoader();
+    const loader = new FBXLoader();
     loader.load(
       FBX_URL,
       (object) => {
@@ -492,10 +518,10 @@ async function loadGLB() {
 
   const loadStart = performance.now();
 
-  const draco = new THREE.DRACOLoader();
-  draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/libs/draco/');
+  const draco = new DRACOLoader();
+  draco.setDecoderPath('./libs/libs/draco/');
 
-  const loader = new THREE.GLTFLoader();
+  const loader = new GLTFLoader();
   loader.setDRACOLoader(draco);
 
   return new Promise((resolve, reject) => {
